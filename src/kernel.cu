@@ -4,13 +4,25 @@
 #include <math.h>
 #include <cuda_runtime.h>
 #include "../include/helper_image.h"
+#include "../include/td1.h"
 #include <iostream>
+#include "helper_cuda.h"
 // #include <windows.h>                // for Windows APIs
 #define KERNEL_SIZE 7
 #define EDGE 0xFFFF
 #define NON_EDGE 0x0
 #define EDGE_V 255
-#define REPETITIONS 100
+#define REPETITIONS 1
+
+#define gpuErrchk(ans) { gpuAssert((ans), __FILE__, __LINE__); }
+inline void gpuAssert(cudaError_t code, const char *file, int line, bool abort=true)
+{
+   if (code != cudaSuccess) 
+   {
+      fprintf(stderr,"GPUassert: %s %s %d\n", cudaGetErrorString(code), file, line);
+      if (abort) exit(code);
+   }
+}
 
 void populate_blur_kernel(double out_kernel[KERNEL_SIZE][KERNEL_SIZE])
 {
@@ -76,6 +88,8 @@ __global__ void apply_gaussian_filter_gpu(unsigned char *out_pixels, unsigned ch
 	double kernelSum = 0;
 	double redPixelVal = 0;
 	int pixNum;
+	int pixNum_filter;
+	int pixNum_kernel;
 
 	// just copy the input to the output
 	/*for (int i = threadIdx.x; i < cols; i += blockDim.x) {
@@ -85,19 +99,28 @@ __global__ void apply_gaussian_filter_gpu(unsigned char *out_pixels, unsigned ch
 	//for (int pixNum = 0; pixNum < rows * cols; ++pixNum) {
 
 	for (int i = threadIdx.x; i < cols; i += blockDim.x) {
-		pixNum = blockIdx.x*cols + i;
+		pixNum = blockIdx.x * cols + i;
+		kernelSum = 0;
+		redPixelVal = 0;
 
-		for (int i = 0; i < KERNEL_SIZE; ++i) {
-			for (int j = 0; j < KERNEL_SIZE; ++j) {
+		for (int ki = 0; ki < KERNEL_SIZE; ++ki) {
+			for (int kj = 0; kj < KERNEL_SIZE; ++kj) {
 
 				//check edge cases, if within bounds, apply filter
-				if (((pixNum + ((i - ((KERNEL_SIZE - 1) / 2))*cols) + j - ((KERNEL_SIZE - 1) / 2)) >= 0)
-					&& ((pixNum + ((i - ((KERNEL_SIZE - 1) / 2))*cols) + j - ((KERNEL_SIZE - 1) / 2)) <= rows * cols - 1)
-					&& (((pixNum % cols) + j - ((KERNEL_SIZE - 1) / 2)) >= 0)
-					&& (((pixNum % cols) + j - ((KERNEL_SIZE - 1) / 2)) <= (cols - 1))) {
+				if (((pixNum + ((ki - ((KERNEL_SIZE - 1) / 2))*cols) + kj - ((KERNEL_SIZE - 1) / 2)) >= 0)
+					&& ((pixNum + ((ki - ((KERNEL_SIZE - 1) / 2))*cols) + kj - ((KERNEL_SIZE - 1) / 2)) <= rows * cols - 1)
+					&& (((pixNum % cols) + kj - ((KERNEL_SIZE - 1) / 2)) >= 0)
+					&& (((pixNum % cols) + kj - ((KERNEL_SIZE - 1) / 2)) <= (cols - 1))) {
 
-					redPixelVal += kernel[i*KERNEL_SIZE+j] * in_pixels[pixNum + ((i - ((KERNEL_SIZE - 1) / 2))*cols) + j - ((KERNEL_SIZE - 1) / 2)];
-					kernelSum += kernel[i*KERNEL_SIZE+j];
+					pixNum_filter = pixNum + ((ki - ((KERNEL_SIZE - 1) / 2))*cols) + kj - ((KERNEL_SIZE - 1) / 2);
+					pixNum_kernel = ki*KERNEL_SIZE+kj;
+
+							if (threadIdx.x == 64 && blockIdx.x == 256) {
+								printf("pn: %d\tpnf: %d\t pnk: %d\n", pixNum, pixNum_filter, pixNum_kernel);
+							}
+
+					redPixelVal += kernel[pixNum_kernel] * in_pixels[pixNum_filter];
+					kernelSum   += kernel[pixNum_kernel];
 				}
 			}
 		}
@@ -367,7 +390,7 @@ int main_function(int argc, char **argv)
 	printf("Test \n");
 
 	unsigned char *lena = NULL;
-	unsigned char *lena_dev = NULL;
+	unsigned char *lena_dev;
 	unsigned int w = 512, h = 512;
 	unsigned char *img_gauss;
 	unsigned char *img_gauss_dev;
@@ -385,7 +408,7 @@ int main_function(int argc, char **argv)
 	img_magn_hys = new short[w*h];
 
 	double kernel[KERNEL_SIZE][KERNEL_SIZE];
-	double *kernel_dev = NULL;
+	double *kernel_dev;
 	populate_blur_kernel(kernel);
 
 	// Pour sauvegarde
@@ -396,8 +419,7 @@ int main_function(int argc, char **argv)
 	unsigned char *img_magn_hys_u8;
 	
 	// timing
-	long long frequency;        // ticks per second
-	long long start, stop, t1, t2, t3, t4;           // ticks
+	timespec start, stop, t1, t2, t3, t4;           // ticks
 	double elapsedTotal_ms = 0;
 	double elapsedDelta1_ms = 0;
 	double elapsedDelta2_ms = 0;
@@ -412,51 +434,50 @@ int main_function(int argc, char **argv)
 	img_magn_hys_u8 = new unsigned char[w*h];
 
 	// if (!sdkLoadPGM("C:\\Users\\fmoranc\\Desktop\\A4\\ProjetVS_SETI\\Release\\lena.pgm", &lena, &w, &h)) fprintf(stderr, "Failed to load lena\n");
-	if (!sdkLoadPGM("/home/felipemoran/A4_sobel/lena.pgm", &lena, &w, &h)) fprintf(stderr, "Failed to load lena\n");
+	if (!sdkLoadPGM("lena.pgm", &lena, &w, &h)) fprintf(stderr, "Failed to load lena\n");
 
-	cudaMalloc((void**)kernel_dev, KERNEL_SIZE*KERNEL_SIZE*sizeof(double));
-	cudaMemcpy(kernel_dev, kernel, KERNEL_SIZE*KERNEL_SIZE * sizeof(double), cudaMemcpyHostToDevice);
+	gpuErrchk( cudaMalloc((void**)&kernel_dev, KERNEL_SIZE*KERNEL_SIZE * sizeof(double)) );
+	gpuErrchk( cudaMemcpy(kernel_dev, kernel, KERNEL_SIZE*KERNEL_SIZE * sizeof(double), cudaMemcpyHostToDevice) );
 
-	cudaMalloc((void**)lena_dev, w*h*sizeof(unsigned char));
-	cudaMalloc((void**)img_gauss_dev, w*h*sizeof(unsigned char));
+	gpuErrchk( cudaMalloc((void**)&lena_dev, w*h*sizeof(unsigned char)) );
+	gpuErrchk( cudaMalloc((void**)&img_gauss_dev, w*h*sizeof(unsigned char)) );
 	
-	QueryPerformanceFrequency(&frequency);
 
 	for (int iRepetition = 0; iRepetition < REPETITIONS; ++iRepetition) {
-		QueryPerformanceCounter(&start);
+		start = timespec_now();
 
 		// copy image to device - TODO
-		cudaMemcpy(lena_dev, lena, w*h*sizeof(unsigned char), cudaMemcpyHostToDevice);
+		gpuErrchk( cudaMemcpy(lena_dev, lena, w*h*sizeof(unsigned char), cudaMemcpyHostToDevice) );
 
-		apply_gaussian_filter_gpu<<<512, 512>>>(img_gauss_dev, lena_dev, kernel_dev, h, w);
-		///apply_gaussian_filter(img_gauss, lena, kernel, h, w);
-		cudaDeviceSynchronize();
+		apply_gaussian_filter_gpu<<<512, 64>>>(img_gauss_dev, lena_dev, kernel_dev, h, w);
+		// apply_gaussian_filter(img_gauss, lena, kernel, h, w);
+		gpuErrchk( cudaDeviceSynchronize() );
 
 		// copy image from device to host
-		cudaMemcpy(img_gauss, img_gauss_dev, w*h*sizeof(unsigned char), cudaMemcpyDeviceToHost);
+		gpuErrchk( cudaMemcpy(img_gauss, img_gauss_dev, w*h*sizeof(unsigned char), cudaMemcpyDeviceToHost) );
 
-		cudaDeviceSynchronize();
+		gpuErrchk( cudaDeviceSynchronize() );
 
-		QueryPerformanceCounter(&t1);
+		t1 = timespec_now();
 
 		compute_intensity_gradient(img_gauss, img_deltaX, img_deltaY, h, w);
-		QueryPerformanceCounter(&t2);
+		t2 = timespec_now();
 
 		magnitude(img_deltaX, img_deltaY, img_magn, h, w);
-		QueryPerformanceCounter(&t3);
+		t3 = timespec_now();
 
 		suppress_non_max(img_magn, img_deltaX, img_deltaY, img_magn_nms, h, w);
-		QueryPerformanceCounter(&t4);
+		t4 = timespec_now();
 
 		apply_hysteresis(img_magn_hys, img_magn_nms, 10, 5, h, w);
-		QueryPerformanceCounter(&stop);
+		stop = timespec_now();
 
-		elapsedDelta1_ms += (t1.QuadPart - start.QuadPart) * 1000.0 / frequency.QuadPart;
-		elapsedDelta2_ms += (t2.QuadPart - t1.QuadPart) * 1000.0 / frequency.QuadPart;
-		elapsedDelta3_ms += (t3.QuadPart - t2.QuadPart) * 1000.0 / frequency.QuadPart;
-		elapsedDelta4_ms += (t4.QuadPart - t3.QuadPart) * 1000.0 / frequency.QuadPart;
-		elapsedDelta5_ms += (stop.QuadPart - t4.QuadPart) * 1000.0 / frequency.QuadPart;
-		elapsedTotal_ms += (stop.QuadPart - start.QuadPart) * 1000.0 / frequency.QuadPart;
+		elapsedDelta1_ms += timespec_to_ms(t1 - start);
+		elapsedDelta2_ms += timespec_to_ms(t2 - t1);
+		elapsedDelta3_ms += timespec_to_ms(t3 - t2);
+		elapsedDelta4_ms += timespec_to_ms(t4 - t3);
+		elapsedDelta5_ms += timespec_to_ms(stop - t4);
+		elapsedTotal_ms += timespec_to_ms(stop - start);
 	}
 
 	fprintf(stderr, "Elapsed delta 1 ms: %f gauss\n", elapsedDelta1_ms / REPETITIONS);
@@ -476,11 +497,12 @@ int main_function(int argc, char **argv)
 
 	
 	// Sauvegarde l'image
-	sdkSavePGM("C:\\Users\\fmoranc\\Desktop\\A4\\ProjetVS_SETI\\Release\\img_lena.pgm", lena, w, h);
-	sdkSavePGM("C:\\Users\\fmoranc\\Desktop\\A4\\ProjetVS_SETI\\Release\\img_gauss.pgm", img_gauss, w, h);
-	sdkSavePGM("C:\\Users\\fmoranc\\Desktop\\A4\\ProjetVS_SETI\\Release\\img_deltaX.pgm", img_deltaX_u8, w, h);
-	sdkSavePGM("C:\\Users\\fmoranc\\Desktop\\A4\\ProjetVS_SETI\\Release\\img_deltaY.pgm", img_deltaY_u8, w, h);
-	sdkSavePGM("C:\\Users\\fmoranc\\Desktop\\A4\\ProjetVS_SETI\\Release\\img_magn_nms.pgm", img_magn_nms_u8, w, h);
-	sdkSavePGM("C:\\Users\\fmoranc\\Desktop\\A4\\ProjetVS_SETI\\Release\\img_magn_hys.pgm", img_magn_hys_u8, w, h); 
+	sdkSavePGM("out/img_lena.pgm", lena, w, h);
+	sdkSavePGM("out/img_gauss.pgm", img_gauss, w, h);
+	sdkSavePGM("out/img_deltaX.pgm", img_deltaX_u8, w, h);
+	sdkSavePGM("out/img_deltaY.pgm", img_deltaY_u8, w, h);
+	sdkSavePGM("out/img_magn_nms.pgm", img_magn_nms_u8, w, h);
+	sdkSavePGM("out/img_magn_hys.pgm", img_magn_hys_u8, w, h); 
 
+	return 0;
 }
