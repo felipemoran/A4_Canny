@@ -3,7 +3,7 @@
 #include <string.h>
 #include <math.h>
 #include <cuda_runtime.h>
-#include "helper_image.h"
+#include "../include/helper_image.h"
 #include <iostream>
 // #include <windows.h>                // for Windows APIs
 #define KERNEL_SIZE 7
@@ -396,8 +396,8 @@ int main_function(int argc, char **argv)
 	unsigned char *img_magn_hys_u8;
 	
 	// timing
-	LARGE_INTEGER frequency;        // ticks per second
-	LARGE_INTEGER start, stop, t1, t2, t3, t4;           // ticks
+	long long frequency;        // ticks per second
+	long long start, stop, t1, t2, t3, t4;           // ticks
 	double elapsedTotal_ms = 0;
 	double elapsedDelta1_ms = 0;
 	double elapsedDelta2_ms = 0;

@@ -26,7 +26,7 @@ NVCC_LIBS=
 # CUDA library directory:
 CUDA_LIB_DIR= -L$(CUDA_ROOT_DIR)/lib64
 # CUDA include directory:
-CUDA_INC_DIR= -I$(CUDA_ROOT_DIR)/include
+CUDA_INC_DIR= -I$(CUDA_ROOT_DIR)/include -I$(CUDA_ROOT_DIR)/samples/common/inc
 # CUDA linking libraries:
 CUDA_LINK_LIBS= -lcudart
 
@@ -51,7 +51,7 @@ INC_DIR = include
 EXE = run_test
 
 # Object files:
-OBJS = $(OBJ_DIR)/main.o $(OBJ_DIR)/cuda_kernel.o
+OBJS = $(OBJ_DIR)/main.o $(OBJ_DIR)/kernel.o
 
 ##########################################################
 
@@ -63,7 +63,7 @@ $(EXE) : $(OBJS)
 
 # Compile main .cpp file to object files:
 $(OBJ_DIR)/%.o : %.cpp
-	$(CC) $(CC_FLAGS) -c $< -o $@
+	$(CUDA_INC_DIR)& $(CC) $(CC_FLAGS) -c $< -o $@
 
 # Compile C++ source files to object files:
 $(OBJ_DIR)/%.o : $(SRC_DIR)/%.cpp include/%.h
