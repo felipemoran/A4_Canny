@@ -1,4 +1,4 @@
-#include "td1.h"
+#include "../include/td1.h"
 #include <iostream>
 #include <time.h>
 

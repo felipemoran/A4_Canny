@@ -4,6 +4,7 @@
 #include <math.h>
 #include <cuda_runtime.h>
 #include "../include/helper_image.h"
+#include "../include/td1.h"
 #include <iostream>
 // #include <windows.h>                // for Windows APIs
 #define KERNEL_SIZE 7
@@ -396,8 +397,8 @@ int main_function(int argc, char **argv)
 	unsigned char *img_magn_hys_u8;
 	
 	// timing
-	long long frequency;        // ticks per second
-	long long start, stop, t1, t2, t3, t4;           // ticks
+	// long long frequency;        // ticks per second
+	timespec start, stop, t1, t2, t3, t4;           // ticks
 	double elapsedTotal_ms = 0;
 	double elapsedDelta1_ms = 0;
 	double elapsedDelta2_ms = 0;
@@ -420,16 +421,16 @@ int main_function(int argc, char **argv)
 	cudaMalloc((void**)lena_dev, w*h*sizeof(unsigned char));
 	cudaMalloc((void**)img_gauss_dev, w*h*sizeof(unsigned char));
 	
-	QueryPerformanceFrequency(&frequency);
+	// QueryPerformanceFrequency(&frequency);
 
 	for (int iRepetition = 0; iRepetition < REPETITIONS; ++iRepetition) {
-		QueryPerformanceCounter(&start);
+		start = timespec_now();
 
 		// copy image to device - TODO
 		cudaMemcpy(lena_dev, lena, w*h*sizeof(unsigned char), cudaMemcpyHostToDevice);
 
-		apply_gaussian_filter_gpu<<<512, 512>>>(img_gauss_dev, lena_dev, kernel_dev, h, w);
-		///apply_gaussian_filter(img_gauss, lena, kernel, h, w);
+		//apply_gaussian_filter_gpu<<<512, 512>>>(img_gauss_dev, lena_dev, kernel_dev, h, w);
+		apply_gaussian_filter(img_gauss, lena, kernel, h, w);
 		cudaDeviceSynchronize();
 
 		// copy image from device to host
@@ -437,26 +438,26 @@ int main_function(int argc, char **argv)
 
 		cudaDeviceSynchronize();
 
-		QueryPerformanceCounter(&t1);
+		t1 = timespec_now();
 
 		compute_intensity_gradient(img_gauss, img_deltaX, img_deltaY, h, w);
-		QueryPerformanceCounter(&t2);
+		t2 = timespec_now();
 
 		magnitude(img_deltaX, img_deltaY, img_magn, h, w);
-		QueryPerformanceCounter(&t3);
+		t3  = timespec_now();
 
 		suppress_non_max(img_magn, img_deltaX, img_deltaY, img_magn_nms, h, w);
-		QueryPerformanceCounter(&t4);
+		t4 = timespec_now();
 
 		apply_hysteresis(img_magn_hys, img_magn_nms, 10, 5, h, w);
-		QueryPerformanceCounter(&stop);
+		stop  = timespec_now();
 
-		elapsedDelta1_ms += (t1.QuadPart - start.QuadPart) * 1000.0 / frequency.QuadPart;
-		elapsedDelta2_ms += (t2.QuadPart - t1.QuadPart) * 1000.0 / frequency.QuadPart;
-		elapsedDelta3_ms += (t3.QuadPart - t2.QuadPart) * 1000.0 / frequency.QuadPart;
-		elapsedDelta4_ms += (t4.QuadPart - t3.QuadPart) * 1000.0 / frequency.QuadPart;
-		elapsedDelta5_ms += (stop.QuadPart - t4.QuadPart) * 1000.0 / frequency.QuadPart;
-		elapsedTotal_ms += (stop.QuadPart - start.QuadPart) * 1000.0 / frequency.QuadPart;
+		elapsedDelta1_ms += timespec_to_ms(t1 - start);
+		elapsedDelta2_ms += timespec_to_ms(t2 - t1);
+		elapsedDelta3_ms += timespec_to_ms(t3 - t2);
+		elapsedDelta4_ms += timespec_to_ms(t4 - t3);
+		elapsedDelta5_ms += timespec_to_ms(stop - t4);
+		elapsedTotal_ms +=  timespec_to_ms(stop - start);
 	}
 
 	fprintf(stderr, "Elapsed delta 1 ms: %f gauss\n", elapsedDelta1_ms / REPETITIONS);
