@@ -51,7 +51,7 @@ INC_DIR = include
 EXE = run_test
 
 # Object files:
-OBJS = $(OBJ_DIR)/main.o $(OBJ_DIR)/kernel.o
+OBJS = $(OBJ_DIR)/main.o $(OBJ_DIR)/kernel.o $(OBJ_DIR)/td1.o
 
 ##########################################################
 
