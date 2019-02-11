@@ -412,7 +412,7 @@ int main_function(int argc, char **argv)
 	img_magn_hys_u8 = new unsigned char[w*h];
 
 	// if (!sdkLoadPGM("C:\\Users\\fmoranc\\Desktop\\A4\\ProjetVS_SETI\\Release\\lena.pgm", &lena, &w, &h)) fprintf(stderr, "Failed to load lena\n");
-	if (!sdkLoadPGM("/home/instance-2/sobel_filter/lena.pgm", &lena, &w, &h)) fprintf(stderr, "Failed to load lena\n");
+	if (!sdkLoadPGM("/home/felipemoran/A4_sobel/lena.pgm", &lena, &w, &h)) fprintf(stderr, "Failed to load lena\n");
 
 	cudaMalloc((void**)kernel_dev, KERNEL_SIZE*KERNEL_SIZE*sizeof(double));
 	cudaMemcpy(kernel_dev, kernel, KERNEL_SIZE*KERNEL_SIZE * sizeof(double), cudaMemcpyHostToDevice);
