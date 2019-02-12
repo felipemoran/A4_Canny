@@ -12,7 +12,7 @@
 #define EDGE 0xFFFF
 #define NON_EDGE 0x0
 #define EDGE_V 255
-#define REPETITIONS 1
+#define REPETITIONS 100
 
 #define gpuErrchk(ans) { gpuAssert((ans), __FILE__, __LINE__); }
 inline void gpuAssert(cudaError_t code, const char *file, int line, bool abort=true)
@@ -115,9 +115,9 @@ __global__ void apply_gaussian_filter_gpu(unsigned char *out_pixels, unsigned ch
 					pixNum_filter = pixNum + ((ki - ((KERNEL_SIZE - 1) / 2))*cols) + kj - ((KERNEL_SIZE - 1) / 2);
 					pixNum_kernel = ki*KERNEL_SIZE+kj;
 
-							if (threadIdx.x == 64 && blockIdx.x == 256) {
-								printf("pn: %d\tpnf: %d\t pnk: %d\n", pixNum, pixNum_filter, pixNum_kernel);
-							}
+							// if (threadIdx.x == 64 && blockIdx.x == 256) {
+							// 	printf("pn: %d\tpnf: %d\t pnk: %d\n", pixNum, pixNum_filter, pixNum_kernel);
+							// }
 
 					redPixelVal += kernel[pixNum_kernel] * in_pixels[pixNum_filter];
 					kernelSum   += kernel[pixNum_kernel];
@@ -177,6 +177,38 @@ void compute_intensity_gradient(unsigned char *in_pixels, int16_t *deltaX, int16
 		// gradient at the last pixel of each column
 		idx += cols;
 		deltaY[idx] = (int16_t)(in_pixels[idx] - in_pixels[idx - cols]);
+	}
+}
+
+__global__ void compute_intensity_gradient_gpu(unsigned char *in_pixels, int16_t *deltaX_out, int16_t *deltaY_out, int rows, int cols)
+{
+	int16_t deltaX, deltaY;	
+
+	int pixNum;
+
+	for (int i = threadIdx.x; i < cols; i += blockDim.x) {
+		pixNum = blockIdx.x * cols + i;
+
+		// compute delta X ***************************
+		if (i == 0) {
+			deltaX = (int16_t)(in_pixels[pixNum + 1] - in_pixels[pixNum]);
+		} else if (i == cols-1) {
+			deltaX = (int16_t)(in_pixels[pixNum] - in_pixels[pixNum -1]);
+		} else {
+			deltaX = (int16_t)(in_pixels[pixNum + 1] - in_pixels[pixNum - 1]);
+		}
+
+		// compute delta Y ***************************
+		if (blockIdx.x == 0) {
+			deltaY = (int16_t)(in_pixels[pixNum + cols] - in_pixels[pixNum]);
+		} else if (blockIdx.x == rows-1) {
+			deltaY = (int16_t)(in_pixels[pixNum] - in_pixels[pixNum - cols]);
+		} else {
+			deltaY = (int16_t)(in_pixels[pixNum + cols] - in_pixels[pixNum - cols]);
+		}
+
+		deltaX_out[pixNum] = deltaX;
+		deltaY_out[pixNum] = deltaY;
 	}
 }
 
@@ -387,7 +419,6 @@ void apply_hysteresis(int16_t *out_pixels, int16_t *in_pixels, int16_t t_high, i
 
 int main_function(int argc, char **argv)
 {
-	printf("Test \n");
 
 	unsigned char *lena = NULL;
 	unsigned char *lena_dev;
@@ -395,7 +426,9 @@ int main_function(int argc, char **argv)
 	unsigned char *img_gauss;
 	unsigned char *img_gauss_dev;
 	short *img_deltaX;
+	short *img_deltaX_dev;
 	short *img_deltaY;
+	short *img_deltaY_dev;
 	short *img_magn;
 	short *img_magn_nms;
 	short *img_magn_hys;
@@ -441,26 +474,32 @@ int main_function(int argc, char **argv)
 
 	gpuErrchk( cudaMalloc((void**)&lena_dev, w*h*sizeof(unsigned char)) );
 	gpuErrchk( cudaMalloc((void**)&img_gauss_dev, w*h*sizeof(unsigned char)) );
+	gpuErrchk( cudaMalloc((void**)&img_deltaX_dev, w*h*sizeof(short)) );
+	gpuErrchk( cudaMalloc((void**)&img_deltaY_dev, w*h*sizeof(short)) );
 	
 
 	for (int iRepetition = 0; iRepetition < REPETITIONS; ++iRepetition) {
 		start = timespec_now();
 
-		// copy image to device - TODO
+		// copy image to device
 		gpuErrchk( cudaMemcpy(lena_dev, lena, w*h*sizeof(unsigned char), cudaMemcpyHostToDevice) );
-
-		apply_gaussian_filter_gpu<<<512, 64>>>(img_gauss_dev, lena_dev, kernel_dev, h, w);
-		// apply_gaussian_filter(img_gauss, lena, kernel, h, w);
+		apply_gaussian_filter_gpu<<<512, 512>>>(img_gauss_dev, lena_dev, kernel_dev, h, w);
 		gpuErrchk( cudaDeviceSynchronize() );
-
 		// copy image from device to host
-		gpuErrchk( cudaMemcpy(img_gauss, img_gauss_dev, w*h*sizeof(unsigned char), cudaMemcpyDeviceToHost) );
+		// gpuErrchk( cudaMemcpy(img_gauss, img_gauss_dev, w*h*sizeof(unsigned char), cudaMemcpyDeviceToHost) );
+		// gpuErrchk( cudaDeviceSynchronize() );
 
-		gpuErrchk( cudaDeviceSynchronize() );
+		// apply_gaussian_filter(img_gauss, lena, kernel, h, w);
 
 		t1 = timespec_now();
 
-		compute_intensity_gradient(img_gauss, img_deltaX, img_deltaY, h, w);
+		// compute_intensity_gradient(img_gauss, img_deltaX, img_deltaY, h, w);
+
+		compute_intensity_gradient_gpu<<<512,512>>>(img_gauss_dev, img_deltaX_dev, img_deltaY_dev, h, w);
+		gpuErrchk( cudaDeviceSynchronize() );
+		gpuErrchk( cudaMemcpy(img_deltaX, img_deltaX_dev, w*h*sizeof(short), cudaMemcpyDeviceToHost) );
+		gpuErrchk( cudaMemcpy(img_deltaY, img_deltaY_dev, w*h*sizeof(short), cudaMemcpyDeviceToHost) );
+		gpuErrchk( cudaDeviceSynchronize() );
 		t2 = timespec_now();
 
 		magnitude(img_deltaX, img_deltaY, img_magn, h, w);
