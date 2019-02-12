@@ -477,7 +477,6 @@ int main_function(int argc, char **argv)
 	gpuErrchk( cudaMalloc((void**)&img_deltaX_dev, w*h*sizeof(short)) );
 	gpuErrchk( cudaMalloc((void**)&img_deltaY_dev, w*h*sizeof(short)) );
 	
-
 	for (int iRepetition = 0; iRepetition < REPETITIONS; ++iRepetition) {
 		start = timespec_now();
 
@@ -485,6 +484,7 @@ int main_function(int argc, char **argv)
 		gpuErrchk( cudaMemcpy(lena_dev, lena, w*h*sizeof(unsigned char), cudaMemcpyHostToDevice) );
 		apply_gaussian_filter_gpu<<<512, 512>>>(img_gauss_dev, lena_dev, kernel_dev, h, w);
 		gpuErrchk( cudaDeviceSynchronize() );
+
 		// copy image from device to host
 		// gpuErrchk( cudaMemcpy(img_gauss, img_gauss_dev, w*h*sizeof(unsigned char), cudaMemcpyDeviceToHost) );
 		// gpuErrchk( cudaDeviceSynchronize() );
@@ -504,6 +504,7 @@ int main_function(int argc, char **argv)
 
 		magnitude(img_deltaX, img_deltaY, img_magn, h, w);
 		t3 = timespec_now();
+
 
 		suppress_non_max(img_magn, img_deltaX, img_deltaY, img_magn_nms, h, w);
 		t4 = timespec_now();
